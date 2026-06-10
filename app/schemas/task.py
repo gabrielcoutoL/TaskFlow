@@ -1,12 +1,12 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TaskBase(BaseModel):
-    title: str
-    description: str
+    title: str = Field(min_length=1, max_length=200)
+    description: Optional[str] = None
 
 
 class TaskCreate(TaskBase):
@@ -22,8 +22,6 @@ class TaskRead(TaskBase):
 
 
 class TaskUpdate(BaseModel):
-    title: Optional[str]
-    description: Optional[str]
-    id: Optional[int]
-    status: Optional[str]
-    created_at: Optional[datetime]
+    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    status: Optional[str] = None

@@ -1,56 +1,83 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query
+from fastapi import status as http_status
 
-from app.schemas.task import TaskCreate, TaskRead
+from app.schemas.task import TaskCreate, TaskRead, TaskUpdate
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 tasks_db: dict[int, dict] = {}
+_next_id: int = 1
 
 
-@router.post("/", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=TaskRead, status_code=http_status.HTTP_201_CREATED)
 async def create_task(task: TaskCreate):
+    global _next_id
 
-    id = len(tasks_db) + 1
-    status = "pending"
-    created_at = datetime.now(tz=timezone.utc)
+    task_record = {
+        **task.model_dump(),
+        "id": _next_id,
+        "status": "pending",
+        "created_at": datetime.now(tz=timezone.utc),
+    }
 
-    task_data = task.model_dump()
-
-    task_record = {**task_data, "id": id, "status": status, "created_at": created_at}
-
-    tasks_db[id] = task_record
+    tasks_db[_next_id] = task_record
+    _next_id += 1
 
     return task_record
 
 
-@router.get("/", response_model=list[TaskRead], status_code=status.HTTP_200_OK)
-async def get_tasks(status: Optional[str] = Query(default=None)):
+@router.get("/", response_model=list[TaskRead], status_code=http_status.HTTP_200_OK)
+async def get_tasks(task_status: Optional[str] = Query(default=None)):
+    tasks = list(tasks_db.values())
 
-    if not status:
-        tasks = list(tasks_db.values())
-        return tasks
+    if task_status:
+        tasks = [t for t in tasks if t.get("status") == task_status]
 
-    tasks_filtered = [t for t in tasks_db.values() if t.get("status") == status]
-
-    return tasks_filtered
+    return tasks
 
 
-@router.get("/{task_id}", response_model=TaskRead, status_code=status.HTTP_200_OK)
+@router.get("/{task_id}", response_model=TaskRead, status_code=http_status.HTTP_200_OK)
 async def get_task_by_id(task_id: int):
+    task = tasks_db.get(task_id)
 
-    if not task_id:
+    if not task:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=" Task ID not informed !"
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Task não encontrada",
         )
 
-    try:
-        task_by_id = tasks_db[task_id]
-    except HTTPException:
+    return task
+
+
+@router.patch(
+    "/{task_id}", response_model=TaskRead, status_code=http_status.HTTP_200_OK
+)
+async def update_task(task_id: int, task_update: TaskUpdate):
+    task = tasks_db.get(task_id)
+
+    if not task:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=" Task ID not found !"
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Task não encontrada",
         )
 
-    return task_by_id
+    update_data = task_update.model_dump(exclude_unset=True)
+    task.update(update_data)
+
+    return task
+
+
+@router.delete("/{task_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+async def delete_task(task_id: int):
+    task = tasks_db.get(task_id)
+
+    if not task:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Task não encontrada",
+        )
+
+    tasks_db.pop(task_id)
